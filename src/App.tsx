@@ -1,19 +1,19 @@
-import './App.css'
-import Navbar from './components/Navbar'
-import SearchBar from './components/SearchBar'
-import HeroMessage from './components/HeroMessage'
-import Gallery from './components/Gallery'
+import './App.css';
+import Layout from './components/Layout';
+import WelcomeDashboard from './components/Dashboard/WelcomeDashboard';
+import HeroMessage from './components/HeroMessage';
+import SearchBar from './components/SearchBar';
+import Gallery from './components/Gallery';
 
-function App() {
-
+const App: React.FC = () => {
   return (
-    <>
-    <Navbar />
-    <HeroMessage /> 
-    <SearchBar />
-    <Gallery />
-    </>
-  )
-}
+    <Layout>
+      <WelcomeDashboard />
+      <HeroMessage />
+      <SearchBar />
+      <Gallery />
+    </Layout>
+  );
+};
 
-export default App
+export default App;

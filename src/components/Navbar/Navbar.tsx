@@ -13,7 +13,7 @@ const Navbar: React.FC = () => {
       </div>
 
       <div className="flex items-center space-x-6">
-        <button className="bg-pink-500 text-white py-1 px-4 rounded-full flex items-center">
+        <button className="bg-[#ee28ff] text-white py-1 px-4 rounded-full flex items-center">
           <span className="mr-2">✓</span> Nuevas funciones
         </button>
 

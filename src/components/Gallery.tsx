@@ -18,11 +18,8 @@ const ImageCard: React.FC<ImageCardProps> = ({ imageSrc, icon }) => {
 const Gallery: React.FC = () => {
   const categories = ["Inicio", "Fotos", "Videos", "Ilustraciones", "3D"];
   const imageSources = [
-      // Images for column 1
     ["https://placehold.co/400x400/jpg", "https://placehold.co/400x400/jpg"],
-      // Images for column 2
     ["https://placehold.co/400x400/jpg", "https://placehold.co/400x400/jpg"],
-      // Images for column 3
     ["https://placehold.co/400x400/jpg", "https://placehold.co/400x400/jpg"]
   ];
   
@@ -32,7 +29,6 @@ const Gallery: React.FC = () => {
 
   return (
 <div className="min-h-screen bg-black text-white flex flex-col">
-  {/* Navigation */}
   <nav className="flex justify-center space-x-4 p-4">
     {categories.map((category) => (
       <button
@@ -44,7 +40,6 @@ const Gallery: React.FC = () => {
     ))}
   </nav>
 
-  {/* Grid area */}
   <div className="flex-grow flex justify-center items-start p-4">
     <div className="grid grid-cols-3 gap-4">
       {imageSources.map((column, i) => (
@@ -57,8 +52,6 @@ const Gallery: React.FC = () => {
     </div>
   </div>
 </div>
-
-
   );
 }
 
