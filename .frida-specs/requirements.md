@@ -1,122 +1,139 @@
 # Requirements Specification
 
 ## 1. Overview  
-The Image Tagging Service is a .NET Core Web API that accepts an image file, sends it to an external LLM (Large Language Model) API for analysis, and returns a comma-separated list of tags. The user has requested a change in how the JSON payload is constructed: instead of serializing request classes, the API should build a raw string containing only the required values. This document captures the functional and non-functional requirements, user stories, constraints, assumptions, success criteria, and out-of-scope items for implementing that change and ensuring overall system quality.
+The Image Tagging API (“FridaApi”) provides an HTTP endpoint to analyze an image and return a set of descriptive tags. Internally, it forwards the image to an external Large Language Model (LLM) API, parses the comma-separated tag list, filters and trims tags, and returns metadata including image size and processing timestamp. This document captures all functional and non-functional requirements, user stories, constraints, assumptions, acceptance criteria, and out-of-scope items for the project.
 
 ---
 
 ## 2. Functional Requirements
 
 ### 2.1 Core Functionality  
-Priority | ID   | Requirement  
--------- | ---- | ---------------------------------------------------------------  
-Must     | FR-1 | Accept an image upload (`IFormFile`) via `POST /api/imageTagging/generate-tags`.  
-Must     | FR-2 | Validate file presence and supported content types (`jpeg, jpg, png, gif, bmp`).  
-Must     | FR-3 | Convert the image to a Base64 string.  
-Must     | FR-4 | Construct the LLM API request payload as a single raw JSON string with inlined Base64, model name, prompt text, and other parameters—no intermediary request DTO classes.  
-Should   | FR-5 | Send the payload to `https://frida-llm-api.azurewebsites.net/v1/chat/completions` with a Bearer token.  
-Must     | FR-6 | Parse the LLM response payload to extract the “choices[0].message.content” string.  
-Must     | FR-7 | Split returned comma-separated text into tags, trim whitespace, and exclude empty entries.  
-Must     | FR-8 | Return a JSON response containing:  
-         |      | • `Tags`: array of strings  
-         |      | • `ImageSize`: long  
-         |      | • `ProcessedAt`: UTC timestamp  
+Priority (MoSCoW in brackets)
+
+1. FR1 [MUST] – Accept an HTTP POST request containing a single image file (`IFormFile`).  
+2. FR2 [MUST] – Validate that the file is provided and non-empty.  
+3. FR3 [MUST] – Validate that the file content type is one of: JPEG, JPG, PNG, GIF, BMP (case-insensitive).  
+4. FR4 [MUST] – Read the image bytes, compute the length, and convert to Base64.  
+5. FR5 [MUST] – Construct an `LlmApiRequest` with:
+   - Model = `"gpt-5"`  
+   - Messages array containing:
+     1. A text prompt with instructions  
+     2. An image_url object with `data:{contentType};base64,{base64Image}`  
+6. FR6 [MUST] – Send the request to the external LLM API via `HttpClient` and await the response.  
+7. FR7 [MUST] – Handle non-200 HTTP status codes from the LLM API by returning an `ObjectResult` with the same status code and a generic API‐failure error message.  
+8. FR8 [MUST] – Deserialize a successful (200) JSON response into an `LlmApiResponse` model.  
+9. FR9 [MUST] – Validate that `Choices`, the first choice’s `Message`, and its `Content` are non-null and non-empty.  
+10. FR10 [MUST] – Split the content string by commas, trim whitespace, filter out empty entries, and return the resulting tag array.  
+11. FR11 [MUST] – Return an `OkObjectResult` with an `ImageTagsResponse` containing:
+    - `Tags[]`  
+    - `ImageSize` (in bytes)  
+    - `ProcessedAt` (UTC timestamp)  
+12. FR12 [SHOULD] – Log key events, including start/end of processing, validation failures, exceptions, and upstream API errors.  
 
 ### 2.2 User Interactions  
-- A client application (web/Mobile/Postman) issues a `POST` request with `multipart/form-data` containing the image.  
-- The API responds with HTTP 200 and a JSON body of tags or an error status code with message.  
-- Clients display or consume the tag list.
+- HTTP POST `/image/tagging`  
+  - Request: multipart/form-data with field `file`  
+  - Responses:
+    - 200 OK + JSON body on success  
+    - 400 Bad Request + error message for missing/invalid file or failed tag extraction  
+    - 401/403/4xx/5xx from LLM API mapped to the same status code + generic LLM API error message  
+    - 500 Internal Server Error + generic internal‐error message on unexpected exceptions  
 
 ### 2.3 Data Management  
-- No persistent storage required for images or results.  
-- Transient in-memory Base64 conversion and tag processing.  
-- Logs persisted via ASP.NET Core’s logging infrastructure.  
+- No persistent storage  
+- In-memory handling of `IFormFile` stream  
+- Transient storage of LLM API request/response models  
+- JSON serialization/deserialization via `System.Text.Json`  
 
 ---
 
 ## 3. Non-Functional Requirements
 
 ### 3.1 Performance  
-- FR-P1: ≤ 300 ms server-side processing (image conversion + JSON build) for images ≤ 1 MB.  
-- FR-P2: Handle 50 concurrent requests with acceptable latency (< 1 s).  
-- FR-P3: Scale out via Kubernetes or auto-scaling group if average CPU > 60%.
+- Response time ≤ 2 seconds under nominal load (single request).  
+- Must support at least 100 concurrent requests per instance.  
+- Should scale horizontally behind a load balancer.
 
 ### 3.2 Security  
-- FR-S1: Use HTTPS for all inbound and outbound calls.  
-- FR-S2: Authenticate outbound LLM API calls with the provided Bearer token.  
-- FR-S3: Sanitize and validate inputs to prevent injection.  
-- FR-S4: Do not log full Base64 content—only log image size.  
+- API served over HTTPS only.  
+- Optional API key or OAuth 2.0 bearer token authentication on the endpoint.  
+- Sanitize and limit maximum image size (e.g., 5 MB).  
+- Do not log raw image bytes or full base64 strings.  
+- Handle and mask sensitive LLM API credentials.  
 
 ### 3.3 Usability  
-- FR-U1: Clear error messages for invalid file types or missing image.  
-- FR-U2: API documentation via Swagger / OpenAPI.  
-- FR-U3: Support .NET SDK consumers and standard REST clients.  
+- Clear, human-readable error messages:
+  - “No image file provided.”
+  - “Invalid image format. Supported formats: JPEG, PNG, GIF, BMP.”
+  - “Failed to extract tags from LLM response.”
+  - “Failed to analyze image with LLM API.”
+  - “An internal server error occurred while processing the image.”
+- Accessibility: adhere to REST best practices.  
+- API documentation (Swagger/OpenAPI) describing schema and response codes.  
+- Compatible with modern browsers and HTTP clients.
 
 ### 3.4 Reliability  
-- FR-R1: 99.9% uptime SLAs.  
-- FR-R2: Graceful error handling—catch exceptions and return 500 with a generic message.  
-- FR-R3: Retry outbound HTTP calls up to 2 times on transient failures (HTTP 5xx or timeouts).  
-- FR-R4: Daily backup of configuration and logs.
+- Availability target: 99.9% uptime.  
+- Graceful error handling: no unhandled exceptions.  
+- Retry logic or exponential back-off for transient LLM API failures (future enhancement).  
+- Daily backups of configuration and credentials.  
 
 ---
 
 ## 4. User Stories
 
-1. As an API consumer, I want to upload an image and receive tags so that I can categorize my image automatically.  
-2. As a developer, I want the request to the LLM API to be a simple JSON string so that I avoid maintaining multiple DTO classes.  
-3. As a system operator, I want clear logs of requests and errors so that I can diagnose issues quickly.  
-4. As a security officer, I want all external calls to be authenticated so that the service cannot be abused.  
-5. As a performance engineer, I want the service to handle 50 concurrent uploads without degradation so that SLAs are met.  
-6. As an API consumer, I want descriptive error messages for unsupported file types so that I can correct my request.  
-7. As a QA engineer, I want retry logic on outbound calls so that transient LLM API errors don’t break the user experience.  
+1. As a **developer**, I want to POST an image so that I can get descriptive tags for downstream processing.  
+2. As a **client application**, I want clear 4xx and 5xx error messages so that I can handle failures gracefully.  
+3. As an **API consumer**, I want responses under 2 seconds so that my user interface remains responsive.  
+4. As a **DevOps engineer**, I want the service to be stateless so that I can scale it horizontally.  
+5. As a **security auditor**, I want all traffic over HTTPS and no sensitive data in logs so that compliance is maintained.  
+6. As a **QA engineer**, I want high unit‐test coverage and no redundant tests so that the codebase quality remains high.  
+7. As a **product owner**, I want the service to validate input formats strictly so that we avoid abuse.  
+8. As a **support engineer**, I want meaningful logs for all failures so that troubleshooting is faster.  
 
 ---
 
 ## 5. Constraints and Assumptions
 
 ### 5.1 Technical Constraints  
-- Technology Stack: .NET 6+, C#, ASP.NET Core Web API.  
-- Outbound HTTP client must use `HttpClientFactory`.  
-- No ORM or database; stateless service.  
-- Target environment: Azure App Service or Kubernetes.
+- .NET 7 / ASP.NET Core Web API  
+- Use `HttpClient` for external calls; no third-party REST clients.  
+- JSON serialization using `System.Text.Json`.  
+- Unit tests via xUnit + Moq.  
+- LLM API endpoint and contract pre-defined; model = “gpt-5”.
 
 ### 5.2 Business Constraints  
-- Timeline: 2 sprints (4 weeks) for implementation, testing, and rollout.  
-- Budget: Existing cloud and personnel—no additional licenses.  
-- Resources: 1 backend developer, 1 QA, 1 DevOps engineer.
+- Initial delivery in 12 weeks.  
+- Budget capped at 3 full-time developer months.  
+- SLA: 99.9% uptime, support business hours bug-fix turnaround ≤ 4 hours.
 
 ### 5.3 Assumptions  
-- Users are familiar with REST and `multipart/form-data`.  
-- Bearer token is managed by an Ops team and rotates monthly.  
-- LLM API contract (fields and URLs) remains stable during implementation.
+- LLM API credentials and endpoint URL will be provided before development.  
+- Maximum image size ≤ 5 MB.  
+- Consumers will handle authentication if enabled.  
+- Network latency to LLM API is < 500 ms.  
 
 ---
 
 ## 6. Acceptance Criteria
 
-- AC-1: Uploading a valid image returns HTTP 200 with a JSON body:  
-  `{ "tags": ["tag1","tag2"], "imageSize": 12345, "processedAt": "2024-07-01T12:00:00Z" }`.  
-- AC-2: The JSON payload sent to the LLM API is a single string built via interpolation—no use of request model classes or `JsonSerializer.Serialize`.  
-- AC-3: Invalid file types (`.exe`, `.txt`) return HTTP 400 with message “Invalid image format…”.  
-- AC-4: If the LLM API returns non-2xx, the API returns the same status code and logs the error.  
-- AC-5: Service handles 50 concurrent uploads within 1 s average response time (verified via performance test).  
-- AC-6: Unit tests cover:  
-   • JSON payload composition logic  
-   • Base64 conversion  
-   • Tag parsing  
-   • Error flows  
-- AC-7: Swagger documentation updated to reflect new payload-building approach.
+- All **Must Have** functional requirements (FR1–FR11) are implemented and verified with automated tests.  
+- 90%+ unit test coverage of the controller code, including success, validation, error, edge and integration‐style scenarios (mocked).  
+- No duplicate or redundant tests; each test targets a unique code path or behavior.  
+- API responds within 2 seconds for typical workloads.  
+- All error conditions return the correct HTTP status code and message as specified.  
+- LLM request payload matches the schema (`model`, `messages`) and contains correct Base64 image data.  
+- ProcessedAt timestamp is within the request handling window.  
+- API documented in Swagger with examples for request and response.  
 
 ---
 
 ## 7. Out of Scope
 
-- Persisting images or tags to a database.  
-- User authentication or multi-tenant support.  
-- Generating HTML or UI components—API-only.  
-- Support for chunked or streaming image uploads.  
-- On-premise deployment scenarios (only Azure-hosted).
-
----
-
-End of Specification.
+- Persistent storage of images or tags.  
+- Complex image analysis (face detection, object bounding boxes).  
+- Automatic retry policy or circuit breaker for LLM API (to be considered in v2).  
+- Front-end/UI development.  
+- Multi‐tenant or per-user quota enforcement.  
+- Real‐time streaming or WebSocket support.  
+- Additional AI features (e.g., sentiment analysis, OCR).

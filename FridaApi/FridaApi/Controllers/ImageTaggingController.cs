@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using FridaApi.Models.DTOs.Api.Responses;
+using FridaApi.Models.DTOs.External.LlmApi;
 
 namespace FridaApi.Controllers
 {
@@ -31,7 +34,7 @@ namespace FridaApi.Controllers
 
         // Validate image file type
         string[] allowedTypes = { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/bmp" };
-        if (!allowedTypes.Contains(image.ContentType.ToLower()))
+        if (string.IsNullOrEmpty(image.ContentType) || !allowedTypes.Contains(image.ContentType.ToLower()))
         {
           return BadRequest("Invalid image format. Supported formats: JPEG, PNG, GIF, BMP.");
         }
@@ -47,35 +50,45 @@ namespace FridaApi.Controllers
 
         _logger.LogInformation("Image converted to base64. Size: {ImageSize} bytes", image.Length);
 
-        // Prepare the request payload for the LLM API using a simple string approach
-        var requestJson = $$"""
+        // Prepare the request payload using DTOs
+        var request = new LlmApiRequest
         {
-          "model": "gpt-5",
-          "messages": [
+          Model = "gpt-5",
+          Messages = new[]
+          {
+            new LlmRequestMessage
             {
-              "role": "user",
-              "content": [
+              Role = "user",
+              Content = new[]
+              {
+                new LlmContentItem
                 {
-                  "type": "text",
-                  "text": "Analyze this image and provide appropriate tags that describe its content. Return only a comma-separated list of relevant tags without any additional text or explanation."
+                  Type = "text",
+                  Text = "Analyze this image and provide appropriate tags that describe its content. Return only a comma-separated list of relevant tags without any additional text or explanation."
                 },
+                new LlmContentItem
                 {
-                  "type": "image_url",
-                  "image_url": {
-                    "url": "data:{{image.ContentType}};base64,{{base64Image}}"
+                  Type = "image_url",
+                  ImageUrl = new LlmImageUrl
+                  {
+                    Url = $"data:{image.ContentType ?? "application/octet-stream"};base64,{base64Image}"
                   }
                 }
-              ]
+              }
             }
-          ]
-        }
-        """;
+          }
+        };
 
         // Send request to LLM API
         _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", BEARER_TOKEN);
         _httpClient.DefaultRequestHeaders.Accept.Clear();
         _httpClient.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
+        var jsonOptions = new JsonSerializerOptions
+        {
+          DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+        var requestJson = JsonSerializer.Serialize(request, jsonOptions);
         var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
 
         _logger.LogInformation("Sending request to LLM API: {Url}", $"{LLM_API_BASE_URL}/v1/chat/completions");
@@ -93,25 +106,54 @@ namespace FridaApi.Controllers
         _logger.LogInformation("LLM API response received successfully");
 
         // Parse the response from the LLM API
-        var llmResponse = JsonSerializer.Deserialize<LlmApiResponse>(responseContent);
-
-        if (llmResponse?.Choices?.Length > 0 && !string.IsNullOrEmpty(llmResponse.Choices[0]?.Message?.Content))
+        var options = new JsonSerializerOptions
         {
-          var tagsText = llmResponse.Choices[0].Message.Content.Trim();
-          var tags = tagsText.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(tag => tag.Trim())
-                            .Where(tag => !string.IsNullOrEmpty(tag))
-                            .ToArray();
+          PropertyNameCaseInsensitive = true
+        };
+        var llmResponse = JsonSerializer.Deserialize<LlmApiResponse>(responseContent, options);
 
-          var result = new ImageTagsResponse
+        if (llmResponse?.Choices?.Length > 0)
+        {
+          var firstChoice = llmResponse.Choices[0];
+          if (firstChoice?.Message?.Content != null && !string.IsNullOrEmpty(firstChoice.Message.Content))
           {
-            Tags = tags,
-            ImageSize = image.Length,
-            ProcessedAt = DateTime.UtcNow
-          };
+            var messageContent = firstChoice.Message.Content;
+            var tagsText = messageContent.Trim();
 
-          _logger.LogInformation("Successfully generated {TagCount} tags for image", tags.Length);
-          return Ok(result);
+            // Check if after trimming we have empty content
+            if (string.IsNullOrWhiteSpace(tagsText))
+            {
+              _logger.LogWarning("LLM API returned whitespace-only content");
+              return BadRequest("Failed to extract tags from LLM response.");
+            }
+
+            var tags = tagsText.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                              .Select(tag => tag.Trim())
+                              .Where(tag => !string.IsNullOrEmpty(tag))
+                              .ToArray();
+
+            // Check if we have any valid tags after processing
+            if (tags.Length == 0)
+            {
+              _logger.LogWarning("LLM API returned content that resulted in no valid tags");
+              return BadRequest("Failed to extract tags from LLM response.");
+            }
+
+            var result = new ImageTagsResponse
+            {
+              Tags = tags,
+              ImageSize = image.Length,
+              ProcessedAt = DateTime.UtcNow
+            };
+
+            _logger.LogInformation("Successfully generated {TagCount} tags for image", tags.Length);
+            return Ok(result);
+          }
+          else
+          {
+            _logger.LogWarning("LLM API returned empty or invalid response");
+            return BadRequest("Failed to extract tags from LLM response.");
+          }
         }
         else
         {
@@ -125,28 +167,5 @@ namespace FridaApi.Controllers
         return StatusCode(500, "An internal server error occurred while processing the image.");
       }
     }
-  }
-
-  // Response models
-  public class ImageTagsResponse
-  {
-    public string[] Tags { get; set; } = Array.Empty<string>();
-    public long ImageSize { get; set; }
-    public DateTime ProcessedAt { get; set; }
-  }
-
-  public class LlmApiResponse
-  {
-    public LlmChoice[]? Choices { get; set; }
-  }
-
-  public class LlmChoice
-  {
-    public LlmMessage? Message { get; set; }
-  }
-
-  public class LlmMessage
-  {
-    public string? Content { get; set; }
   }
 }
