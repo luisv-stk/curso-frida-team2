@@ -1,275 +1,310 @@
+Below are two parts:  
+1. Suggested refinements for the “system” and “user” prompts you send to the LLM.  
+2. A complete Markdown‐formatted System Design Specification for the Image Tagging service.
+
+---
+
+# 1. Improved LLM Prompts
+
+**System Prompt (refined):**  
+```text
+You are an expert image‐tagging assistant specialized in visual analysis and metadata extraction. 
+Your job:
+  • Identify both obvious and subtle objects, actions, environments, and stylistic elements.
+  • Produce tags in lowercase, hyphenated multi‐word format (e.g. “golden-retriever”, “rule-of-thirds”).
+  • Prefer specific labels (“golden-retriever” over “dog”).
+  • Include technical aspects where relevant (“bokeh-effect”, “high-contrast”).
+  • Reflect cultural or contextual cues when present.
+  • Balance descriptive and interpretive tags.
+Output requirements:
+  • Strictly a comma-separated list of tags.
+  • No explanations, no additional text.
+```
+
+**User Prompt (refined):**  
+```text
+Analyze the following image (provided as base64). Generate tags in these five categories, but return them as a single comma-separated list:
+
+1. Subject Classification:
+   – Primary subjects (specific objects/animals/people)
+   – Secondary elements and backgrounds
+   – Interactions or relationships
+
+2. Technical Details:
+   – Image type (photograph, illustration, etc.)
+   – Quality traits (high-resolution, motion-blur, grainy)
+   – Techniques (macro, aerial-view, long-exposure)
+
+3. Artistic Composition:
+   – Color palette (vibrant, pastel, monochrome)
+   – Lighting (natural-light, backlit, studio-lighting)
+   – Composition (rule-of-thirds, symmetrical, leading-lines)
+
+4. Contextual & Cultural:
+   – Setting, time of day, era
+   – Notable cultural or stylistic references
+
+5. Emotional & Abstract:
+   – Mood or atmosphere
+   – Style influences or thematic elements
+
+Image (base64):  
+data:{contentType};base64,{base64String}
+
+Return only:  
+tag1,tag2,tag3,…  
+```
+
+---
+
 # System Design Specification
 
 ## 1. Architecture Overview
 
-### 1.1 High-Level Architecture  
-- Monolithic ASP.NET Core Web API for image tagging  
-- Stateless HTTP API that accepts image uploads, forwards them to an LLM-based tagging service, and returns tags  
-- Optionally persists tagging requests/results in a relational database for audit and analytics  
-- Deployed in containers behind a load-balanced ingress  
+### 1.1 High-Level Architecture
+We will build a modular microservice architecture:
 
-### 1.2 Architecture Diagram  
+• Frontend: Single‐Page Application (React)  
+• Backend API: ASP.NET Core Web API (C#)  
+• LLM Integration: External Azure‐hosted LLM service (via REST)  
+• Storage:
+  – Blob Storage for images (Azure Blob Storage)  
+  – Relational DB (PostgreSQL) for metadata  
+• Authentication/Authorization: JWT + RBAC  
+• CI/CD & Hosting: Azure DevOps / GitHub Actions → Azure App Services or AKS  
+
+### 1.2 Architecture Diagram (Mermaid)
 ```mermaid
-flowchart LR
-  Client[Client Application] -->|HTTP POST /api/image-tags| API[FridaApi Web API]
-  API -->|Validate & Preprocess Image| ImageService[ImageTaggingService]
-  ImageService -->|Call| LLMClient[LLM API Client]
-  LLMClient -->|HTTP(s) Request| LLM[Third-Party LLM Service]
-  LLM -->|HTTP(s) Response| LLMClient
-  ImageService -->|Parse & Filter Tags| TagProcessor[TagProcessor]
-  TagProcessor -->|Optional Persist| Database[(SQL Database)]
-  TagProcessor -->|Return| API
-  API -->|HTTP 200/4xx/5xx| Client
+graph TD
+  Client[Web or Mobile Client]
+  API[ASP.NET Core API]
+  LLM[Azure LLM Service]
+  Blob[Azure Blob Storage]
+  DB[(PostgreSQL)]
+  Auth[Identity Provider (Azure AD B2C)]
+  CDN[CDN]
+
+  Client -->|HTTPS + JWT| API
+  API -->|REST| LLM
+  API -->|Store/Retrieve| Blob
+  API -->|CRUD| DB
+  Client -->|Static Assets| CDN
+  Client -->|Auth Redirect| Auth
+  API -->|Token Validation| Auth
 ```
 
-### 1.3 Technology Stack  
-- Frontend technologies  
-  - Any HTTP client (JavaScript/TypeScript, .NET, mobile)  
-  - HTML form or multipart upload widget  
-- Backend technologies  
-  - .NET 6+ / ASP.NET Core Web API  
-  - C# 10+  
-  - Dependency Injection  
-  - HttpClientFactory  
-  - JSON serialization via System.Text.Json  
-- Database systems  
-  - PostgreSQL or SQL Server (Entity Framework Core)  
-  - Redis for caching (optional)  
-- Third-party services and APIs  
-  - LLM Provider API (e.g., OpenAI, Azure OpenAI)  
-  - Cloud Storage (S3/Blob) if persisting raw images  
-  - Email/Notification service (optional)  
-  - Application Monitoring (AppInsights, Datadog)  
-- Development tools  
-  - xUnit, Moq for unit/integration tests  
-  - Docker, Kubernetes (Helm)  
-  - GitHub Actions / Azure DevOps / Jenkins for CI/CD  
-  - SonarQube for code quality  
+### 1.3 Technology Stack
+- Frontend:
+  • React (TypeScript), Redux or Context API  
+  • UI library: Material-UI or TailwindCSS  
+  • Build: Vite or Webpack  
+- Backend:
+  • .NET 7+ ASP.NET Core Web API  
+  • HTTP Client for LLM calls  
+  • FluentValidation / DataAnnotations  
+- Database:
+  • PostgreSQL (hosted on Azure Database for PostgreSQL)  
+  • Entity Framework Core ORM  
+- Storage & Services:
+  • Azure Blob Storage for raw images  
+  • Azure AD B2C for authentication  
+  • Azure Monitor / Application Insights  
+- Dev Tools:
+  • Git, GitHub Actions or Azure Pipelines  
+  • Docker for local development  
+  • Swagger / OpenAPI  
 
 ## 2. Component Design
 
-### 2.1 Frontend Components  
-Though primary focus is the API, a minimal frontend might include:  
-- ImageUploadForm  
-  - Renders `<input type="file">`, validates file presence and size client-side  
-  - Submits multipart/form-data to POST `/api/image-tags`  
-- TagResultsDisplay  
-  - Shows returned tags and metadata (image size, processed timestamp)  
-- ErrorBanner  
-  - Displays user-friendly error messages on 4xx/5xx responses  
+### 2.1 Frontend Components
+- ImageUploader
+  • Handles file selection, previews, and sends to `/api/image-tagging/generate-tags`.
+- TagResults
+  • Displays generated tags in a stylized tag cloud or list.
+- AuthWrapper
+  • Manages login/logout via Azure AD B2C and injects JWT into requests.
 
-### 2.2 Backend Services  
-- Controllers  
-  - `ImageTaggingController`  
-    - Endpoint: `POST /api/image-tags`  
-    - Accepts `IFormFile`, runs validation, calls `IImageTaggingService`  
-- Services  
-  - `IImageTaggingService`  
-    - `Task<ImageTagsResponse> GenerateTagsAsync(IFormFile imageFile)`  
-    - Coordinates: validation, base64 encoding, LLM call, tag parsing  
-  - `ILlmApiClient`  
-    - `Task<LlmApiResponse> AnalyzeImageAsync(LlmApiRequest request)`  
-    - Encapsulates HTTP calls, error handling, deserialization  
-  - `ITagRepository` (optional)  
-    - `Task SaveRequestAsync(TagRequestEntity entity)`  
-    - `Task SaveResultAsync(TagResultEntity entity)`  
-- Processors  
-  - `TagProcessor`  
-    - Splits comma-separated string, trims white space, filters empty entries  
-- Infrastructure  
-  - `HttpClient` configured via `IHttpClientFactory` for resilience (retries, timeouts)  
-  - Global exception filter / middleware for consistent error responses  
+### 2.2 Backend Services
+- ImageTaggingController
+  • Endpoint: `POST /api/image-tagging/generate-tags`
+  • Validates image, converts to base64, invokes `LlmClient`.
+- LlmClient (Service)
+  • Wraps HTTP interactions with the external LLM API.
+- ImageStorageService
+  • Uploads raw image to Blob Storage, returns URL or keeps binary in DB.
+- TagRepository
+  • Persists tag results, associates them with image metadata.
+- AuthMiddleware
+  • Validates incoming JWT, enforces RBAC policies.
 
-### 2.3 Database Layer  
-- Interaction via Entity Framework Core  
-- Entities: `TagRequest`, `TagResult`  
-- Context: `FridaDbContext`  
-- Patterns: repository or generic repository + unit of work  
+### 2.3 Database Layer
+- Use EF Core with Repository/Unit‐of‐Work patterns.
+- Data access through async methods.
+- Leverage connection pooling, retry policies.
 
 ## 3. Data Models
 
 ### 3.1 Database Schema
 
-Users Table (if authentication is required):
-- id: UUID (PK)  
-- username: VARCHAR(100), Unique  
-- password_hash: VARCHAR(200)  
-- role: VARCHAR(50)  
-- created_at: TIMESTAMP  
-- updated_at: TIMESTAMP  
+Images table:
+- id (UUID, PK)  
+- user_id (UUID, FK → Users)  
+- blob_url (string)  
+- original_filename (string)  
+- content_type (string)  
+- size_bytes (int)  
+- uploaded_at (timestamp)  
 
-TagRequest Table:
-- id: UUID (PK)  
-- user_id: UUID (FK to Users)  
-- image_size: INT  
-- content_type: VARCHAR(50)  
-- created_at: TIMESTAMP  
+Tags table:
+- id (UUID, PK)  
+- image_id (UUID, FK → Images)  
+- tag_text (string)  
+- category (enum: Subject, Technical, Artistic, Contextual, Emotional)  
+- confidence (float, optional)  
 
-TagResult Table:
-- id: UUID (PK)  
-- request_id: UUID (FK to TagRequest)  
-- tags: TEXT[] or JSONB  
-- processed_at: TIMESTAMP  
+Users table:
+- id (UUID, PK)  
+- email (string, unique)  
+- password_hash (string)  
+- role (enum: Admin, User)  
+- created_at, updated_at (timestamps)
 
-### 3.2 Data Flow  
-1. Client uploads image → Controller  
-2. Controller validates file → Service  
-3. Service streams image into memory, computes size, encodes to base64  
-4. Service builds `LlmApiRequest` → `LlmApiClient.AnalyzeImageAsync`  
-5. LLM response → Service → `TagProcessor` extracts clean tag array  
-6. (Optional) Persist request & result  
-7. Controller returns `ImageTagsResponse`  
+### 3.2 Data Flow
+1. Client posts image → API.  
+2. Controller validates, stores image in Blob, writes record to Images table.  
+3. Controller calls LLM service, receives comma‐separated tags.  
+4. Tags are parsed, each saved to Tags table with reference to image.  
+5. Response (tags + image metadata) returned to client.
 
 ## 4. API Design
 
 ### 4.1 Endpoints
 
-#### POST /api/image-tags
-- HTTP Method: POST  
-- URL Path: `/api/image-tags`  
-- Authentication: Bearer JWT (optional)  
-- Request:  
-  - Content-Type: `multipart/form-data`  
-  - Body: Field `image` (file)  
-- Responses:  
-  - 200 OK  
-    ```json
-    {
-      "tags": ["nature","landscape","mountains","sky"],
-      "imageSize": 12345,
-      "processedAt": "2024-07-01T12:34:56.789Z"
-    }
-    ```  
-  - 400 Bad Request  
-    - Missing file → `"No image file provided."`  
-    - Invalid format → `"Invalid image format. Supported formats: JPEG, PNG, GIF, BMP."`  
-    - LLM returned empty/invalid content → `"Failed to extract tags from LLM response."`  
-  - 4xx from LLM API  
-    - Pass-through status code, body `"Failed to analyze image with LLM API."`  
-  - 500 Internal Server Error  
-    - JSON parsing / network errors → `"An internal server error occurred while processing the image."`  
+| Method | Path                                        | Request Body / Params                   | Response                                | Auth          |
+|--------|---------------------------------------------|-----------------------------------------|-----------------------------------------|---------------|
+| POST   | /api/image-tagging/generate-tags            | formData: image file                    | { imageId, tags[], imageUrl, timestamp} | Bearer JWT    |
+| GET    | /api/image-tagging/{imageId}/tags           | path: imageId                           | { imageId, tags[], imageUrl, uploadedAt}| Bearer JWT    |
+| GET    | /api/images                                 | query: page, pageSize                   | [{ imageId, url, tags[] }]              | Bearer JWT    |
+| POST   | /api/auth/register                          | { email, password }                     | { userId, token }                       | Public        |
+| POST   | /api/auth/login                             | { email, password }                     | { token }                               | Public        |
 
-### 4.2 API Patterns  
-- RESTful POST for creation of a tagging job  
-- All responses JSON with consistent shape  
-- Could evolve to GraphQL or WebSocket for real-time progress (future)  
+### 4.2 API Patterns
+- RESTful routes with clear noun-based endpoints.
+- JSON:API–style envelope if needed.
+- All endpoints versioned in URL: `/v1/...` (future proofing).
+- WebSocket not required—long polling for status if LLM is slow.
 
 ## 5. Security Design
 
-### 5.1 Authentication Strategy  
-- JWT Bearer tokens issued by Identity Provider (Auth0, Azure AD B2C)  
-- Middleware: `AddJwtBearer` in ASP.NET Core  
+### 5.1 Authentication Strategy
+- OAuth 2.0 implicit / authorization code flow via Azure AD B2C.  
+- JWT tokens issued on login/registration.  
+- Tokens stored in `httpOnly` cookies or secure local storage.
 
-### 5.2 Authorization  
-- Role-based access control (Admin, User)  
-- Policies for rate-limiting endpoint usage  
+### 5.2 Authorization
+- Role-based access control (RBAC):
+  • Admin can view all images and tags.  
+  • Users only access their own records.
 
-### 5.3 Data Protection  
-- HTTPS/TLS for all transport  
-- Encryption at rest for DB data  
-- Validate and sanitize `IFormFile` uploads to prevent malicious content  
+### 5.3 Data Protection
+- HTTPS everywhere (TLS 1.2+).  
+- AES-256 encryption at rest for blob storage and DB.  
+- Sanitize file uploads: whitelist MIME types.  
+- Input validation on all fields.
 
 ## 6. Integration Points
 
-### 6.1 External Services  
-- LLM API (OpenAI, Azure)  
-  - Auth via API key in header  
-  - Rate limit handling (429) with retry/backoff  
-- (Optional) Cloud Storage  
-  - Store raw images in S3/Blob after tagging  
-- (Optional) Analytics  
-  - Send usage events to telemetry (e.g., Application Insights)  
+### 6.1 External Services
+- Azure Blob Storage (image hosting).  
+- Azure AD B2C (authentication).  
+- Azure LLM API (image analysis).  
+- SendGrid or Azure Communication Services (optional email notifications).
 
-### 6.2 Internal Integrations  
-- HTTP Client Factory for typed `ILlmApiClient`  
-- EF Core for DB  
-- Logging via `ILogger<T>`  
+### 6.2 Internal Integrations
+- Services communicate via DI‐injected interfaces.  
+- Use `HttpClientFactory` for LLM calls with named clients and retry policies.
 
 ## 7. Performance Considerations
 
-### 7.1 Optimization Strategies  
-- Caching  
-  - Redis cache for repeated image URLs → cached tags  
-- Database Indexing  
-  - Index on `TagRequest.created_at`  
-- Query Optimization  
-- Lazy loading disabled by default  
-- Stream image bytes rather than fully buffering (for very large files)  
+### 7.1 Optimization Strategies
+- Caching:
+  • CDN for static assets and blob images.  
+  • In-memory cache (Redis) for frequent DB queries (recent images).  
+- DB Indexing:
+  • Index on `Images(user_id)` and `Tags(image_id)`.  
+- Asynchronous processing:
+  • Consider offloading LLM calls to a background queue (Azure Queue + Function) if latency high.
 
-### 7.2 Scalability  
-- Containerized horizontally (Kubernetes/HPA)  
-- Load balancing via ingress controller  
-- Database vertical scaling; consider read replicas  
-- Circuit Breaker/Retry on LLM API calls  
+### 7.2 Scalability
+- API as stateless microservices → scale horizontally behind Azure Load Balancer.  
+- Blob Storage and PostgreSQL managed services scale easily.  
+- Use Kubernetes (AKS) or Azure App Service autoscale.
 
 ## 8. Error Handling and Logging
 
-### 8.1 Error Handling Strategy  
-- Use ASP.NET Core middleware to catch unhandled exceptions → standardized 500 JSON response  
-- Throw `BadRequestException`, `UpstreamApiException` to produce 400/4xx  
+### 8.1 Error Handling Strategy
+- Global exception middleware to catch unhandled errors.  
+- Return structured error objects: `{ code, message }`.  
+- Validation errors return `400` with details.
 
-### 8.2 Logging and Monitoring  
-- Log at `Information` for request start/end, `Warning` for recoverable errors, `Error` for exceptions  
-- Correlation ID per request  
-- Centralized log aggregation (ELK/Datadog)  
-- Metrics: request rate, latency, error rate  
+### 8.2 Logging and Monitoring
+- Structured logging with Serilog → Application Insights.  
+- Log:
+  • Request/response times.  
+  • External call statuses.  
+  • Exceptions with stack traces.  
+- Alerts on error thresholds and performance degradation.
 
 ## 9. Development Workflow
 
-### 9.1 Project Structure  
+### 9.1 Project Structure
 ```
 /src
-  /FridaApi
-    /Controllers
-    /Services
-    /Clients
-    /Models
-    /Data
-    /Middleware
+  /api
+    Controllers/
+    Services/
+    Models/
+    Repositories/
+    DTOs/
     Program.cs
-  /FridaApi.Tests
-    /Unit
-    /Integration
-    ImageTaggingControllerTests.cs
-/docker
-  Dockerfile
-/helm
-  Chart.yaml
-  templates/
+  /client
+    src/
+      components/
+      pages/
+      services/
+      utils/
 .gitignore
 README.md
 ```
 
-### 9.2 Development Environment  
-- .NET 6 SDK  
-- Local PostgreSQL (Docker)  
-- Environment variables:
-  - `LLM_API_KEY`
-  - `ConnectionStrings__Default`
-  - `ASPNETCORE_ENVIRONMENT`  
-- Launch settings: Kestrel HTTPS + Swagger  
+### 9.2 Development Environment
+- .env for local secrets (DB conn, blob keys, AD B2C config).  
+- Docker Compose for local PostgreSQL + Redis.  
+- Scripts: `npm start`, `dotnet run`, `docker-compose up`.
 
-### 9.3 Testing Strategy  
-- Unit tests (xUnit + Moq) for controllers and services  
-- Integration tests using TestServer (in-memory ASP.NET Core)  
-- E2E tests with a real LLM mock or stub  
-- Target ≥ 80% coverage for business logic  
+### 9.3 Testing Strategy
+- Unit Tests: xUnit (backend), Jest+React Testing Library (frontend).  
+- Integration Tests: in-memory DB or test container.  
+- E2E Tests: Playwright or Cypress.  
+- Aim ≥ 80% coverage.
 
 ## 10. Deployment Architecture
 
-### 10.1 Deployment Strategy  
-- CI/CD pipeline (GitHub Actions)  
-  - Build → Run unit tests → Build Docker image → Push to registry → Helm deploy to dev  
-  - Manual promotion to staging/production  
+### 10.1 Deployment Strategy
+- CI/CD:
+  • On push to `main` → build/test → deploy to `staging`.  
+  • Manual approval → deploy to `production`.  
+- Use GitHub Actions or Azure Pipelines with environment-specific variables.
 
-### 10.2 Infrastructure  
-- Hosting on AWS EKS / Azure Kubernetes Service  
-- Docker containers  
-- Managed PostgreSQL (RDS / Azure Database)  
-- Secrets in AWS Secrets Manager / Azure Key Vault  
-- Ingress via NGINX or managed load balancer  
-- Horizontal Pod Autoscaler based on CPU and custom metrics (request latency)  
+### 10.2 Infrastructure
+- Hosting:
+  • API & frontend on Azure App Service or AKS.  
+  • PostgreSQL Managed.  
+  • Blob Storage.  
+- Containerization:
+  • Docker images for API and client.  
+  • Helm charts or Terraform for infra as code.
 
 ---
 
-This specification provides a concrete blueprint for implementing, testing, and deploying the Image Tagging API (“FridaApi”). It balances simplicity (monolithic service) with extensibility (clear service boundaries, database persistence, caching, and CI/CD), follows industry best practices, and is ready for iteration as requirements evolve.
+This specification provides a clear, actionable blueprint to implement, test, secure, and deploy your Image Tagging service end‐to‐end.

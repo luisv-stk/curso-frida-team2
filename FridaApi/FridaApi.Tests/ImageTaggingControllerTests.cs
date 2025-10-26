@@ -529,20 +529,29 @@ namespace FridaApi.Tests
       // Assert
       Assert.NotNull(capturedRequest);
       Assert.Equal("gpt-5", capturedRequest.Model);
-      Assert.Single(capturedRequest.Messages);
+      Assert.Equal(2, capturedRequest.Messages.Length); // Now expects 2 messages: system + user
 
-      var message = capturedRequest.Messages[0];
-      Assert.Equal("user", message.Role);
+      // Verify system message
+      var systemMessage = capturedRequest.Messages[0];
+      Assert.Equal("system", systemMessage.Role);
+      var systemContentItems = JsonSerializer.Deserialize<LlmContentItem[]>(systemMessage.Content!.ToString()!);
+      Assert.NotNull(systemContentItems);
+      Assert.Single(systemContentItems);
+      Assert.Equal("text", systemContentItems[0].Type);
+      Assert.Contains("You are an expert image tagging AI with advanced computer vision capabilities", systemContentItems[0].Text);
 
-      var contentItems = JsonSerializer.Deserialize<LlmContentItem[]>(message.Content!.ToString()!);
-      Assert.NotNull(contentItems);
-      Assert.Equal(2, contentItems.Length);
+      // Verify user message
+      var userMessage = capturedRequest.Messages[1];
+      Assert.Equal("user", userMessage.Role);
+      var userContentItems = JsonSerializer.Deserialize<LlmContentItem[]>(userMessage.Content!.ToString()!);
+      Assert.NotNull(userContentItems);
+      Assert.Equal(2, userContentItems.Length);
 
-      Assert.Equal("text", contentItems[0].Type);
-      Assert.Contains("Analyze this image", contentItems[0].Text);
+      Assert.Equal("text", userContentItems[0].Type);
+      Assert.Contains("Analyze this image", userContentItems[0].Text);
 
-      Assert.Equal("image_url", contentItems[1].Type);
-      Assert.Contains($"data:{DEFAULT_CONTENT_TYPE};base64,{expectedBase64}", contentItems[1].ImageUrl!.Url);
+      Assert.Equal("image_url", userContentItems[1].Type);
+      Assert.Contains($"data:{DEFAULT_CONTENT_TYPE};base64,{expectedBase64}", userContentItems[1].ImageUrl!.Url);
     }
 
     #endregion

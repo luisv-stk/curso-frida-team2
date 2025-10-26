@@ -1,69 +1,46 @@
 <tasks>
   <task>
-    <task_name>Identify Unused Constants in ImageTaggingControllerTests</task_name>
+    <task_name>Improve LLM API User Prompt</task_name>
     <subtasks>
       <subtask>
         <id>1</id>
-        <name>Extract constant declarations</name>
-        <description>Parse the ImageTaggingControllerTests file to list all declared constant fields.</description>
+        <name>Draft detailed user instruction</name>
+        <description>Create a more specific, detailed user prompt that guides the LLM to generate comprehensive and precise image tags by specifying tag categories like objects, attributes, scene context, and stylistic elements, and instruct the model to output only a comma-separated list of tags without extra text.</description>
         <completed>true</completed>
       </subtask>
       <subtask>
         <id>2</id>
-        <name>Analyze constant usage</name>
-        <description>Search the test file for references to each constant to determine which ones are never utilized.</description>
+        <name>Update prompt text in controller code</name>
+        <description>Modify the LlmContentItem of type "text" in ImageTaggingController.cs to use the new detailed user prompt content.</description>
+        <completed>true</completed>
+      </subtask>
+      <subtask>
+        <id>5</id>
+        <name>Review and refine user prompt for clarity and specificity</name>
+        <description>Critically assess the current user prompt content, optimize language for clarity and conciseness, ensure it covers all necessary tag categories, and update the LlmContentItem in ImageTaggingController.cs if improvements are identified.</description>
         <completed>true</completed>
       </subtask>
     </subtasks>
   </task>
   <task>
-    <task_name>Remove or Refactor Unused Constants</task_name>
+    <task_name>Add System Prompt for Tag Extraction</task_name>
     <subtasks>
       <subtask>
         <id>3</id>
-        <name>Remove unused constants</name>
-        <description>Delete declarations of constants that have no references to clean up dead code in the test file.</description>
+        <name>Define system message for tag extraction</name>
+        <description>Compose a system prompt message instructing the model to focus exclusively on extracting relevant image tags and to operate in tagging mode, ensuring it behaves as a tag extractor.</description>
         <completed>true</completed>
       </subtask>
       <subtask>
         <id>4</id>
-        <name>Validate test suite integrity</name>
-        <description>Run the full test suite after removal to confirm that all tests still pass and no functionality is broken.</description>
-        <completed>true</completed>
-      </subtask>
-    </subtasks>
-  </task>
-  <task>
-    <task_name>Review and Refine Test Suite Quality</task_name>
-    <subtasks>
-      <subtask>
-        <id>5</id>
-        <name>Identify redundant or overlapping tests</name>
-        <description>Analyze the test suite to find any tests that cover the same scenarios or duplicate functionality.</description>
+        <name>Integrate system message into request payload</name>
+        <description>Add a LlmRequestMessage with role "system" and the defined system prompt content to the Messages array in ImageTaggingController.cs before the user message.</description>
         <completed>true</completed>
       </subtask>
       <subtask>
         <id>6</id>
-        <name>Assess test clarity and naming conventions</name>
-        <description>Review test names and descriptions to ensure they are descriptive, follow naming standards, and clearly convey their purpose.</description>
-        <completed>true</completed>
-      </subtask>
-      <subtask>
-        <id>7</id>
-        <name>Validate adherence to testing best practices</name>
-        <description>Ensure each test follows best practices such as Arrange-Act-Assert, single assertion focus, and proper setup/teardown.</description>
-        <completed>true</completed>
-      </subtask>
-      <subtask>
-        <id>8</id>
-        <name>Check coverage and scenario completeness</name>
-        <description>Use coverage analysis to verify that all critical code paths and edge cases are adequately tested without gaps.</description>
-        <completed>true</completed>
-      </subtask>
-      <subtask>
-        <id>9</id>
-        <name>Finalize test suite and run validations</name>
-        <description>Execute the entire test suite and review results and coverage reports to confirm no redundancies and complete coverage.</description>
+        <name>Review and refine system prompt for focus and precision</name>
+        <description>Evaluate the existing system prompt for conciseness and effectiveness, adjust wording to reinforce the model's tagging role, and update the LlmRequestMessage in ImageTaggingController.cs if necessary.</description>
         <completed>true</completed>
       </subtask>
     </subtasks>

@@ -58,13 +58,60 @@ namespace FridaApi.Controllers
           {
             new LlmRequestMessage
             {
+              Role = "system",
+              Content = new[]
+              {
+                new LlmContentItem
+                {
+                  Type = "text",
+                  Text = "You are an expert image tagging AI with advanced computer vision capabilities. Your mission: generate comprehensive, searchable metadata tags.\n\n" +
+                        "CORE PRINCIPLES:\n" +
+                        "• Accuracy over assumptions - only tag what you can clearly observe\n" +
+                        "• Specificity over generality (e.g., 'border-collie' not 'dog', 'vintage-1950s-car' not 'vehicle')\n" +
+                        "• Balance obvious elements with nuanced details\n" +
+                        "• Include both literal and interpretive tags when justified\n\n" +
+                        "TAG FORMATTING RULES:\n" +
+                        "• Lowercase with hyphens for multi-word concepts\n" +
+                        "• No spaces, underscores, or special characters\n" +
+                        "• Consistent terminology (standardize similar concepts)\n" +
+                        "• 3-30 characters per tag ideal length\n\n" +
+                        "OUTPUT: Only comma-separated tags. No explanations, descriptions, or additional text."
+                }
+              }
+            },
+            new LlmRequestMessage
+            {
               Role = "user",
               Content = new[]
               {
                 new LlmContentItem
                 {
                   Type = "text",
-                  Text = "Analyze this image and provide appropriate tags that describe its content. Return only a comma-separated list of relevant tags without any additional text or explanation."
+                  Text = "Generate comprehensive tags for this image. Systematically analyze and tag:\n\n" +
+                        "🎯 SUBJECTS & OBJECTS:\n" +
+                        "• People: age-group, gender, ethnicity, clothing, expressions, poses, activities\n" +
+                        "• Animals: species, breed, age, behavior, position\n" +
+                        "• Objects: specific items, brands, materials, conditions, purposes\n" +
+                        "• Architecture: building-types, styles, periods, materials\n\n" +
+                        "🎨 VISUAL CHARACTERISTICS:\n" +
+                        "• Colors: dominant-hues, color-schemes, saturation-levels\n" +
+                        "• Lighting: source-type, direction, quality, time-of-day\n" +
+                        "• Composition: framing, angles, perspective, balance\n" +
+                        "• Style: artistic-movements, techniques, effects\n\n" +
+                        "📍 CONTEXT & ENVIRONMENT:\n" +
+                        "• Location: indoor/outdoor, specific-venues, geographic-regions\n" +
+                        "• Season/weather: climate-conditions, seasonal-indicators\n" +
+                        "• Era: historical-periods, cultural-contexts, fashion-eras\n" +
+                        "• Activity: events, situations, purposes, functions\n\n" +
+                        "🔧 TECHNICAL ASPECTS:\n" +
+                        "• Image-type: photography, illustration, digital-art, painting\n" +
+                        "• Quality: resolution, clarity, grain, artifacts\n" +
+                        "• Camera-work: focal-length, depth-of-field, exposure, techniques\n\n" +
+                        "💭 MOOD & INTERPRETATION:\n" +
+                        "• Emotional-tone: cheerful, melancholic, energetic, peaceful\n" +
+                        "• Atmosphere: formal, casual, dramatic, serene\n" +
+                        "• Themes: concepts, messages, symbolism\n\n" +
+                        "Aim for 15-40 relevant tags. Prioritize accuracy and searchability."
                 },
                 new LlmContentItem
                 {
