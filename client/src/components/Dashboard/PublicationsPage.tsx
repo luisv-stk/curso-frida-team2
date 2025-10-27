@@ -30,7 +30,7 @@ const PublicationsPage: React.FC<PublicationsPageProps> = ({ publications, onAdd
   return (
     <div className="w-screen min-h-screen bg-[#f5f9fd] p-8">
       <div className="flex justify-between items-center p-4">
-        <div className="flex items-center text-[#0276ff] cursor-pointer" onClick={onBack}>
+        <div className="flex items-center text-[#0276ff] cursor-pointer mt-8" onClick={onBack}>
           <FaArrowLeft className="mr-2" />
           <h2 className="text-2xl font-bold">Todas mis publicaciones</h2>
         </div>
