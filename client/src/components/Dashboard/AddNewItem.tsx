@@ -1,5 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaArrowLeft, FaCheck, FaCloudUploadAlt, FaCamera } from 'react-icons/fa';
+
+export type Publication = {
+  name: string;
+  fileType: string;
+  size: string;
+  description: string;
+  price: string;
+  author: string;
+  date: string;
+  imageUrl: string;
+};
 
 interface FormData {
   fileType: string;
@@ -10,9 +21,16 @@ interface FormData {
 
 interface AddNewItemProps {
   onBack: () => void;
+  onSubmitSuccess: (newPub: Publication) => void;
 }
 
-const AddNewItem: React.FC<AddNewItemProps> = ({ onBack }) => {
+const AddNewItem: React.FC<AddNewItemProps> = ({ onBack, onSubmitSuccess }) => {
+  useEffect(() => {
+    if (!onSubmitSuccess || typeof onSubmitSuccess !== 'function') {
+      throw new Error('onSubmitSuccess prop is missing or not a function');
+    }
+  }, [onSubmitSuccess]);
+
   const [formData, setFormData] = useState<FormData>({
     fileType: 'Fotografía',
     title: '',
@@ -20,50 +38,55 @@ const AddNewItem: React.FC<AddNewItemProps> = ({ onBack }) => {
     uploadedFile: null,
   });
 
+  const [isUploading, setIsUploading] = useState(false);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prevData => ({
-      ...prevData,
-      [name]: value,
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files ? e.target.files[0] : null;
-    setFormData(prevData => ({
-      ...prevData,
-      uploadedFile: file,
-    }));
+    const file = e.target.files?.[0] ?? null;
+    setFormData(prev => ({ ...prev, uploadedFile: file }));
   };
 
-  const handleSubmit = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    if (!formData.uploadedFile) return alert('Selecciona un archivo primero.');
 
-    // --- Logging the data ---
-    console.groupCollapsed('Form Data Collected (Ready for API)');
-    console.log('Tipo de Archivo (fileType):', formData.fileType);
-    console.log('Título (title):', formData.title);
-    console.log('Precio (price):', formData.price);
+    setIsUploading(true);
 
-    if (formData.uploadedFile) {
-        console.log('Archivo Cargado (uploadedFile):', {
-            name: formData.uploadedFile.name,
-            size: `${(formData.uploadedFile.size / 1024 / 1024).toFixed(2)} MB`,
-            type: formData.uploadedFile.type,
-        });
-    } else {
-        console.log('Archivo Cargado (uploadedFile): No se ha seleccionado ningún archivo.');
+    try {
+      const body = new FormData();
+      body.append('image', formData.uploadedFile);
+
+      const response = await fetch('http://localhost:5203/api/ImageTagging/generate-tags', {
+        method: 'POST',
+        body,
+      });
+
+      if (!response.ok) throw new Error('Error al subir el archivo.');
+
+      const result = await response.json();
+
+      const newPublication: Publication = {
+        name: formData.title || formData.uploadedFile.name,
+        fileType: formData.fileType,
+        size: `${(formData.uploadedFile.size / 1024).toFixed(1)} KB`,
+        description: result.tags || 'Sin descripción generada',
+        price: formData.price || 'Gratis',
+        author: 'Tú',
+        date: new Date().toLocaleDateString('es-ES'),
+        imageUrl: URL.createObjectURL(formData.uploadedFile),
+      };
+
+      onSubmitSuccess(newPublication);
+    } catch (error) {
+      console.error(error);
+      alert('Hubo un error al subir el archivo.');
+    } finally {
+      setIsUploading(false);
     }
-    console.groupEnd();
-  };
-
-  const handleClear = () => {
-    setFormData({
-      fileType: 'Fotografía',
-      title: '',
-      price: '',
-      uploadedFile: null,
-    });
   };
 
   const UploadIcon = formData.uploadedFile ? FaCamera : FaCloudUploadAlt;
@@ -94,7 +117,6 @@ const AddNewItem: React.FC<AddNewItemProps> = ({ onBack }) => {
               value={type}
               checked={formData.fileType === type}
               onChange={handleChange}
-              className="text-[#0276ff]"
             />
             <span>{type}</span>
           </label>
@@ -126,39 +148,49 @@ const AddNewItem: React.FC<AddNewItemProps> = ({ onBack }) => {
 
       <div className="mt-4 border-dashed border-2 border-[#0276ff] bg-white rounded p-6 flex flex-col items-center text-center relative">
         <input
-            type="file"
-            name="uploadedFile"
-            onChange={handleFileChange}
-            className="absolute opacity-0 w-full h-full cursor-pointer" 
-            style={{ zIndex: 10, top: 0, left: 0 }}
-            accept=".jpg,.png"
+          type="file"
+          name="uploadedFile"
+          onChange={handleFileChange}
+          className="absolute opacity-0 w-full h-full cursor-pointer"
+          style={{ zIndex: 10, top: 0, left: 0 }}
+          accept=".jpg,.png"
         />
-        
+
         <UploadIcon className="text-[#ee28ff] text-4xl" />
-        
+
         <p className="mt-4 font-semibold">
-          {formData.uploadedFile ? `Archivo seleccionado: ${formData.uploadedFile.name}` : 'Arrastra desde tu ordenador el archivo que quieres cargar'}
+          {formData.uploadedFile
+            ? `Archivo seleccionado: ${formData.uploadedFile.name}`
+            : 'Arrastra desde tu ordenador el archivo que quieres cargar'}
         </p>
-        
-          {!formData.uploadedFile && (
-              <p className="text-sm text-[#6f7274] mt-2">
-                  Recuerda que el archivo no puede superar los 2 Mb. y tiene que ser en formato .JPG o .PNG
-              </p>
-          )}
+
+        {!formData.uploadedFile && (
+          <p className="text-sm text-[#6f7274] mt-2">
+            Recuerda que el archivo no puede superar los 2 Mb. y tiene que ser en formato .JPG o .PNG
+          </p>
+        )}
       </div>
 
       <div className="mt-6 flex space-x-4">
         <button
-          onClick={handleClear}
+          onClick={() =>
+            setFormData({
+              fileType: 'Fotografía',
+              title: '',
+              price: '',
+              uploadedFile: null,
+            })
+          }
           className="py-2 px-4 border rounded-full bg-[#d9d9d9] text-black"
         >
           Borrar
         </button>
         <button
           onClick={handleSubmit}
-          className="py-2 px-4 border rounded-full bg-[#0276ff] text-white font-semibold hover:bg-[#005bb5] transition-colors"
+          disabled={isUploading}
+          className="py-2 px-4 border rounded-full bg-[#0276ff] text-white font-semibold hover:bg-[#005bb5] transition-colors disabled:opacity-50"
         >
-          Cargar archivo
+          {isUploading ? 'Subiendo...' : 'Cargar archivo'}
         </button>
       </div>
     </div>

@@ -1,18 +1,47 @@
 import React, { useState } from 'react';
 import { FaClock, FaCheck } from 'react-icons/fa';
 import AddNewItem from './AddNewItem';
+import Gallery from '../Gallery';
+import PublicationsPage from './PublicationsPage';
+export interface Publication {
+  name: string;
+  fileType: string;
+  size: string;
+  description: string;
+  price: string;
+  author: string;
+  date: string;
+  imageUrl: string;
+}
 
 const Dashboard: React.FC = () => {
   const [showAddNew, setShowAddNew] = useState(false);
+  const [showPublications, setShowPublications] = useState(false);
 
-if (showAddNew) {
-  return <AddNewItem onBack={() => setShowAddNew(false)} />;
-}
+  const [publications, setPublications] = useState<Publication[]>([]);
 
+  const handleNewPublication = (pub: Publication) => {
+    setPublications(prev => [pub, ...prev]);
+    setShowAddNew(false);
+  };
+
+  if (showAddNew) {
+    return <AddNewItem onBack={() => setShowAddNew(false)} onSubmitSuccess={handleNewPublication} />;
+  }
+
+  if (showPublications) {
+    return (
+      <PublicationsPage
+        publications={publications}
+        onAddNew={handleNewPublication}
+        onBack={() => setShowPublications(false)}
+      />
+    );
+  }
 
   return (
     <div className="w-screen pt-24 pb-8 bg-[#f5f9fd] flex flex-col items-center justify-center">
-      <div className="w-full max-w-4xl bg-[#f5f9fd] text-[#131313] ">
+      <div className="w-full max-w-4xl bg-[#f5f9fd] text-[#131313]">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center text-[#EE28FF]">
             <FaClock />
@@ -32,7 +61,10 @@ if (showAddNew) {
             <li>12 ilustraciones</li>
           </ul>
           <div className="flex space-x-4">
-            <button className="px-4 py-2 border-2 border-[#0179ff] text-[#0179ff] rounded-lg">
+            <button
+              onClick={() => setShowPublications(true)}
+              className="px-4 py-2 border-2 border-[#0179ff] text-[#0179ff] rounded-lg"
+            >
               Ver todas tus publicaciones
             </button>
             <button
@@ -44,6 +76,8 @@ if (showAddNew) {
           </div>
         </div>
       </div>
+
+      <Gallery publications={publications} />
     </div>
   );
 };
